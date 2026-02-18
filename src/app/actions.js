@@ -65,3 +65,20 @@ export async function issueStrike({ name, date, amount }) {
   }
   return { success: false };
 }
+
+// NEW: Fetches the Discord queries for the 1-Click Copy button
+export async function getDiscordQueries() {
+  const doc = await getDocument();
+  const rosterTab = doc.sheetsById[0];
+  const rows = await rosterTab.getRows();
+  const queries = {};
+  
+  for (const r of rows) {
+    const name = r.get('Name');
+    const query = r.get('Discord Query');
+    if (name && query) {
+      queries[name.trim().toLowerCase()] = query;
+    }
+  }
+  return queries;
+}
