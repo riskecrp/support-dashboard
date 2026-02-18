@@ -39,7 +39,7 @@ export default async function Home() {
   return (
     <main className="min-h-screen p-8 bg-slate-950 text-white">
       <div className="max-w-[1400px] mx-auto">
-        <h1 className="text-4xl font-black mb-10 tracking-tighter bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent italic">COMMAND CENTER</h1>
+        <h1 className="text-4xl font-black mb-10 tracking-tighter bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent italic">Support Staff Management Dashboard</h1>
         <StaffTable initialData={staffData} />
       </div>
     </main>
