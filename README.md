@@ -4,24 +4,12 @@ Welcome to the Support Staff Management Dashboard. This is a Next.js web applica
 
 
 
-## Prerequisites
+## Phase 1
 Before you begin, ensure you have the following accounts set up:
 * A **Google Account** (to host the spreadsheet and access the Google Cloud Console)
 * A **GitHub Account** (to copy and store the code)
 * A **Railway.app Account** (for free/low-cost web hosting)
 * **Node.js** installed on your computer (if you plan to test the code locally)
-
----
-
-## Phase 1: Preparing the Google Sheet (The Database)
-This dashboard relies on a very specific spreadsheet structure to function correctly. 
-
-1. Create a new Google Sheet. 
-2. Set up the following tabs in this exact order:
-   * **Tab 1 (Index 0):** Name it `Roster`. **Crucial:** Cell **D1** must be named exactly `Discord Query`. This is where the app stores the automated ticket search strings.
-   * **Tab 2 (Index 1):** Name it `AllStats`. This is where the monthly data will be committed.
-   * **Changelog Tab:** The app requires a specific tab for logging roster changes. Check the URL of your Changelog tab and find the `gid=xxxxxxx` number. You must update the `changelogTab` ID in `src/app/actions.js` to match this number.
-   * **Forum Tracking Tab:** If you use an external sheet to track forum reports, find its `gid=xxxxxxx` number and update the `forumTab` ID in the `getForumTallies()` function inside `src/app/actions.js`. Names on this tab must be in Column B.
 
 ---
 
