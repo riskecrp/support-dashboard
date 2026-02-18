@@ -1,6 +1,6 @@
 "use client";
-import { useState, useMemo } from 'react';
-import { manageStaffRecord, commitMonthlyBatch, issueStrike } from './actions';
+import { useState, useMemo, useEffect } from 'react';
+import { manageStaffRecord, commitMonthlyBatch, issueStrike, getDiscordQueries } from './actions';
 
 export default function StaffTable({ initialData }) {
   const [search, setSearch] = useState("");
@@ -23,6 +23,14 @@ export default function StaffTable({ initialData }) {
 
   const [processingName, setProcessingName] = useState(null);
   const [actionStatus, setActionStatus] = useState(null);
+  
+  // NEW: State to hold the discord query strings
+  const [discordQueries, setDiscordQueries] = useState({});
+
+  // NEW: Fetch queries when the dashboard loads
+  useEffect(() => {
+    getDiscordQueries().then(setDiscordQueries);
+  }, []);
 
   const availableMonths = useMemo(() => {
     const months = initialData.map(d => d.date?.substring(0, 7)).filter(Boolean);
@@ -258,21 +266,41 @@ export default function StaffTable({ initialData }) {
               </tr>
             </thead>
             <tbody>
-              {stagedRows.map((row, idx) => (
-                <tr key={idx} className="border-b border-slate-800/50 hover:bg-slate-800/20">
-                  <td className="p-2 font-bold text-white">{row['Staff Name']}</td>
-                  <td className="p-2 text-center font-bold text-white text-sm">{row['New IG Reports']}</td>
-                  <td className="p-2 text-center">
-                    <input type="number" className="w-16 bg-slate-950 border border-slate-700 rounded p-1 text-center text-white outline-none focus:border-indigo-400" onChange={(e) => updateStaged(idx, 'Total Discord', e.target.value)} />
-                  </td>
-                  <td className="p-2 text-center font-bold text-slate-300 text-sm">{row['New Discord']}</td>
-                  <td className="p-2 text-center flex gap-1 justify-center">
-                    <input type="date" className="bg-slate-950 p-1 rounded text-[10px] text-white border border-slate-700 outline-none focus:border-indigo-400" onChange={(e) => updateStaged(idx, 'loaStart', e.target.value)} />
-                    <input type="date" className="bg-slate-950 p-1 rounded text-[10px] text-white border border-slate-700 outline-none focus:border-indigo-400" onChange={(e) => updateStaged(idx, 'loaEnd', e.target.value)} />
-                  </td>
-                  <td className="p-2 text-center font-bold text-white text-sm">{row['LOA Days']}d</td>
-                </tr>
-              ))}
+              {stagedRows.map((row, idx) => {
+                const queryStr = discordQueries[row['Staff Name'].toLowerCase()];
+                return (
+                  <tr key={idx} className="border-b border-slate-800/50 hover:bg-slate-800/20">
+                    <td className="p-2 font-bold text-white">{row['Staff Name']}</td>
+                    <td className="p-2 text-center font-bold text-white text-sm">{row['New IG Reports']}</td>
+                    <td className="p-2 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        {queryStr && (
+                          <button 
+                            onClick={(e) => {
+                              navigator.clipboard.writeText(queryStr);
+                              const el = e.currentTarget;
+                              const old = el.innerText;
+                              el.innerText = '✅';
+                              setTimeout(() => el.innerText = old, 1500);
+                            }}
+                            title="Copy Discord Search Query"
+                            className="text-slate-500 hover:text-emerald-400 transition-colors text-sm"
+                          >
+                            📋
+                          </button>
+                        )}
+                        <input type="number" className="w-16 bg-slate-950 border border-slate-700 rounded p-1 text-center text-white outline-none focus:border-indigo-400" onChange={(e) => updateStaged(idx, 'Total Discord', e.target.value)} />
+                      </div>
+                    </td>
+                    <td className="p-2 text-center font-bold text-slate-300 text-sm">{row['New Discord']}</td>
+                    <td className="p-2 text-center flex gap-1 justify-center mt-1">
+                      <input type="date" className="bg-slate-950 p-1 rounded text-[10px] text-white border border-slate-700 outline-none focus:border-indigo-400" onChange={(e) => updateStaged(idx, 'loaStart', e.target.value)} />
+                      <input type="date" className="bg-slate-950 p-1 rounded text-[10px] text-white border border-slate-700 outline-none focus:border-indigo-400" onChange={(e) => updateStaged(idx, 'loaEnd', e.target.value)} />
+                    </td>
+                    <td className="p-2 text-center font-bold text-white text-sm">{row['LOA Days']}d</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
