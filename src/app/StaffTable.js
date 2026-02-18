@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo, useEffect } from 'react';
-import { manageStaffRecord, commitMonthlyBatch, issueStrike, getDiscordQueries } from './actions';
+import { manageStaffRecord, commitMonthlyBatch, issueStrike, getDiscordQueries, getForumTallies } from './actions';
 
 export default function StaffTable({ initialData }) {
   const [search, setSearch] = useState("");
@@ -24,12 +24,14 @@ export default function StaffTable({ initialData }) {
   const [processingName, setProcessingName] = useState(null);
   const [actionStatus, setActionStatus] = useState(null);
   
-  // NEW: State to hold the discord query strings
   const [discordQueries, setDiscordQueries] = useState({});
+  // NEW: State to hold the forum tallies
+  const [forumTallies, setForumTallies] = useState({});
 
-  // NEW: Fetch queries when the dashboard loads
   useEffect(() => {
     getDiscordQueries().then(setDiscordQueries);
+    // Fetch the forum counts silently in the background
+    getForumTallies().then(setForumTallies);
   }, []);
 
   const availableMonths = useMemo(() => {
@@ -150,6 +152,15 @@ export default function StaffTable({ initialData }) {
         }
 
         if (matchedName && !isNaN(Number(totalIG))) {
+          
+          // Calculates their Auto-Tallied Forum Reports
+          let calcTotalForum = 0;
+          for (const [tName, count] of Object.entries(forumTallies)) {
+             if (tName === matchedName.toLowerCase() || tName === alias.toLowerCase()) {
+                 calcTotalForum += count;
+             }
+          }
+
           processed.push({
             'Date': prepDate, 
             'Staff Name': matchedName, 
@@ -157,9 +168,9 @@ export default function StaffTable({ initialData }) {
             'Quizzes Accepted': qAcc, 
             'Quizzes Rejected': qRej, 
             'Total Reports Completed': Number(totalIG),
-            'Total Forum Reports': '0', 
+            'Total Forum Reports': calcTotalForum.toString(), 
             'New IG Reports': Number(totalIG) - (Number(lastMonthRecord?.reportsCompleted) || 0),
-            'New Forum Reports': 0, 
+            'New Forum Reports': calcTotalForum - (Number(lastMonthRecord?.totalForumReports) || 0), 
             'Total Discord': lastMonthRecord?.totalDiscord || '0', 
             'New Discord': 0, 
             'Strike Given': '0', 
@@ -177,9 +188,13 @@ export default function StaffTable({ initialData }) {
   const updateStaged = (idx, field, val) => {
     const u = [...stagedRows];
     u[idx][field] = val;
+    const last = initialData.filter(r => r.name === u[idx]['Staff Name']).sort((a,b) => new Date(b.date) - new Date(a.date))[0];
+    
     if (field === 'Total Discord') {
-      const last = initialData.filter(r => r.name === u[idx]['Staff Name']).sort((a,b) => new Date(b.date) - new Date(a.date))[0];
       u[idx]['New Discord'] = Number(val) - (Number(last?.totalDiscord) || 0);
+    }
+    if (field === 'Total Forum Reports') {
+      u[idx]['New Forum Reports'] = Number(val) - (Number(last?.totalForumReports) || 0);
     }
     if (field === 'loaStart' || field === 'loaEnd') {
       if (u[idx].loaStart && u[idx].loaEnd) {
@@ -244,7 +259,7 @@ export default function StaffTable({ initialData }) {
       </div>
 
       {stagedRows.length > 0 && (
-        <div className="bg-slate-900 border-2 border-emerald-500/30 rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in duration-300">
+        <div className="bg-slate-900 border-2 border-emerald-500/30 rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in duration-300 overflow-x-auto">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-xl font-black text-emerald-400 italic">STAGING AREA: Verify Data & Input LOA</h3>
             <button onClick={async () => { 
@@ -258,11 +273,13 @@ export default function StaffTable({ initialData }) {
             <thead className="bg-slate-800 text-slate-500 uppercase tracking-widest border-b border-slate-700">
               <tr>
                 <th className="p-2">Name</th>
-                <th className="p-2 text-center text-slate-300">New IG (Writing)</th>
+                <th className="p-2 text-center text-slate-300">New IG (Math)</th>
+                <th className="p-2 text-center text-sky-400 font-bold">Total Forum (Auto)</th>
+                <th className="p-2 text-center text-sky-400">New Forum</th>
                 <th className="p-2 text-center text-slate-300 font-bold">Total Discord (Input)</th>
-                <th className="p-2 text-center text-slate-300">New Discord (Writing)</th>
+                <th className="p-2 text-center text-slate-300">New Discord</th>
                 <th className="p-2 text-center text-slate-300">LOA Range (Input)</th>
-                <th className="p-2 text-center text-slate-300">LOA Days (Writing)</th>
+                <th className="p-2 text-center text-slate-300">Days</th>
               </tr>
             </thead>
             <tbody>
@@ -271,9 +288,15 @@ export default function StaffTable({ initialData }) {
                 return (
                   <tr key={idx} className="border-b border-slate-800/50 hover:bg-slate-800/20">
                     <td className="p-2 font-bold text-white">{row['Staff Name']}</td>
-                    <td className="p-2 text-center font-bold text-white text-sm">{row['New IG Reports']}</td>
+                    <td className="p-2 text-center font-bold text-emerald-400">{row['New IG Reports']}</td>
+                    
                     <td className="p-2 text-center">
-                      <div className="flex items-center justify-center gap-2">
+                      <input type="number" value={row['Total Forum Reports']} className="w-12 bg-slate-950 border border-slate-700 rounded p-1 text-center text-sky-400 font-bold outline-none focus:border-sky-400" onChange={(e) => updateStaged(idx, 'Total Forum Reports', e.target.value)} />
+                    </td>
+                    <td className="p-2 text-center font-bold text-sky-400">{row['New Forum Reports']}</td>
+
+                    <td className="p-2 text-center">
+                      <div className="flex items-center justify-center gap-1">
                         {queryStr && (
                           <button 
                             onClick={(e) => {
@@ -284,20 +307,21 @@ export default function StaffTable({ initialData }) {
                               setTimeout(() => el.innerText = old, 1500);
                             }}
                             title="Copy Discord Search Query"
-                            className="text-slate-500 hover:text-emerald-400 transition-colors text-sm"
+                            className="text-slate-500 hover:text-emerald-400 transition-colors text-xs"
                           >
                             📋
                           </button>
                         )}
-                        <input type="number" className="w-16 bg-slate-950 border border-slate-700 rounded p-1 text-center text-white outline-none focus:border-indigo-400" onChange={(e) => updateStaged(idx, 'Total Discord', e.target.value)} />
+                        <input type="number" className="w-14 bg-slate-950 border border-slate-700 rounded p-1 text-center text-white outline-none focus:border-indigo-400" onChange={(e) => updateStaged(idx, 'Total Discord', e.target.value)} />
                       </div>
                     </td>
-                    <td className="p-2 text-center font-bold text-slate-300 text-sm">{row['New Discord']}</td>
+                    <td className="p-2 text-center font-bold text-slate-300">{row['New Discord']}</td>
+                    
                     <td className="p-2 text-center flex gap-1 justify-center mt-1">
-                      <input type="date" className="bg-slate-950 p-1 rounded text-[10px] text-white border border-slate-700 outline-none focus:border-indigo-400" onChange={(e) => updateStaged(idx, 'loaStart', e.target.value)} />
-                      <input type="date" className="bg-slate-950 p-1 rounded text-[10px] text-white border border-slate-700 outline-none focus:border-indigo-400" onChange={(e) => updateStaged(idx, 'loaEnd', e.target.value)} />
+                      <input type="date" className="bg-slate-950 p-1 rounded text-[9px] text-white border border-slate-700 outline-none focus:border-indigo-400" onChange={(e) => updateStaged(idx, 'loaStart', e.target.value)} />
+                      <input type="date" className="bg-slate-950 p-1 rounded text-[9px] text-white border border-slate-700 outline-none focus:border-indigo-400" onChange={(e) => updateStaged(idx, 'loaEnd', e.target.value)} />
                     </td>
-                    <td className="p-2 text-center font-bold text-white text-sm">{row['LOA Days']}d</td>
+                    <td className="p-2 text-center font-bold text-white">{row['LOA Days']}d</td>
                   </tr>
                 )
               })}
