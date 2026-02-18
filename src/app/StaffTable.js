@@ -25,12 +25,10 @@ export default function StaffTable({ initialData }) {
   const [actionStatus, setActionStatus] = useState(null);
   
   const [discordQueries, setDiscordQueries] = useState({});
-  // NEW: State to hold the forum tallies
   const [forumTallies, setForumTallies] = useState({});
 
   useEffect(() => {
     getDiscordQueries().then(setDiscordQueries);
-    // Fetch the forum counts silently in the background
     getForumTallies().then(setForumTallies);
   }, []);
 
@@ -153,10 +151,18 @@ export default function StaffTable({ initialData }) {
 
         if (matchedName && !isNaN(Number(totalIG))) {
           
-          // Calculates their Auto-Tallied Forum Reports
+          // Calculates Auto-Tallied Forum Reports with FUZZY MATCHING (ignores numbers/symbols)
           let calcTotalForum = 0;
+          const cleanTargetName = matchedName.toLowerCase().replace(/[^a-z]/g, '');
+          const cleanTargetAlias = alias.toLowerCase().replace(/[^a-z]/g, '');
+
           for (const [tName, count] of Object.entries(forumTallies)) {
-             if (tName === matchedName.toLowerCase() || tName === alias.toLowerCase()) {
+             const cleanTName = tName.replace(/[^a-z]/g, '');
+             
+             if (tName === matchedName.toLowerCase() || 
+                 tName === alias.toLowerCase() || 
+                 (cleanTName && cleanTName === cleanTargetName) || 
+                 (cleanTName && cleanTName === cleanTargetAlias)) {
                  calcTotalForum += count;
              }
           }
