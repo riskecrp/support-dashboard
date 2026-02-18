@@ -66,7 +66,6 @@ export async function issueStrike({ name, date, amount }) {
   return { success: false };
 }
 
-// NEW: Fetches the Discord queries for the 1-Click Copy button
 export async function getDiscordQueries() {
   const doc = await getDocument();
   const rosterTab = doc.sheetsById[0];
@@ -81,4 +80,31 @@ export async function getDiscordQueries() {
     }
   }
   return queries;
+}
+
+// NEW: Automates the tally of Forum Reports from the designated tab
+export async function getForumTallies() {
+  try {
+    const doc = await getDocument();
+    const forumTab = doc.sheetsById[382477503];
+    await forumTab.loadHeaderRow();
+    const rows = await forumTab.getRows();
+    
+    // Column B is index 1
+    const colBHeader = forumTab.headerValues[1];
+    const tallies = {};
+    
+    for (const r of rows) {
+      const rawName = r.get(colBHeader);
+      if (rawName) {
+        // Lowercase and trim to handle basic accidental spaces
+        const cleanName = rawName.toString().toLowerCase().trim();
+        tallies[cleanName] = (tallies[cleanName] || 0) + 1;
+      }
+    }
+    return tallies;
+  } catch (error) {
+    console.error("Error fetching forum tallies:", error);
+    return {};
+  }
 }
