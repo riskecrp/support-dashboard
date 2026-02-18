@@ -22,10 +22,6 @@ export default function StaffTable({ initialData }) {
   const [lookupTotal, setLookupTotal] = useState("");
   const [waivedStrikes, setWaivedStrikes] = useState([]); 
 
-  // Feedback States
-  const [processingName, setProcessingName] = useState(null);
-  const [actionStatus, setActionStatus] = useState(null);
-
   // Date Logic
   const availableMonths = useMemo(() => {
     const months = initialData.map(d => d.date?.substring(0, 7)).filter(Boolean);
@@ -101,34 +97,66 @@ export default function StaffTable({ initialData }) {
     return { ig: sorted('newIG'), forum: sorted('newForum'), discord: sorted('newDiscord') };
   }, [displayData]);
 
-  // --- 4. PREP LOGIC (THE SHREDDER) ---
+  // --- 4. PREP LOGIC (BACKWARD ARRAY SHREDDER) ---
   function handleProcessPrep() {
-    const clean = (t) => t ? t.replace(/~[a-z]~/gi, "").trim() : "";
-    let safeText = prepText
-      .replace(/AccountAliasQuizzes AcceptedQuizzes RejectedReports CompletedRankAction/gi, "")
-      .replace(/Account\s+Alias\s+Quizzes Accepted\s+Quizzes Rejected\s+Reports Completed\s+Rank\s+Action/gi, "")
-      .trim();
-
-    const rawLines = safeText.split('\n').map(l => l.trim()).filter(Boolean);
+    const lines = prepText.split('\n');
     let processed = [];
-    
-    for (let i = 0; i < rawLines.length; i += 2) {
-      const statLine = rawLines[i+1];
-      if (!statLine) continue;
-      const match = statLine.match(/^(.*?)\s+(\d+)\s+(\d+)\s+(\d+)\s+(Support|Senior Support|Senior)/i);
-      if (match) {
-        const rawAlias = match[1]; 
-        const totalIG = match[4];  
-        const alias = clean(rawAlias);
-        const last = initialData.filter(r => r.name.toLowerCase() === alias.toLowerCase()).sort((a,b) => new Date(b.date) - new Date(a.date))[0];
+
+    for (let line of lines) {
+      line = line.trim();
+      if (!line) continue;
+      
+      // If the line doesn't have the rank in it, it's just an account name or header; skip it.
+      if (!/(Support|Senior)/i.test(line)) continue;
+
+      // Normalize any tabs into spaces, then split into an array
+      const parts = line.replace(/\t/g, ' ').split(/\s+/).filter(Boolean);
+
+      // Find the Rank column by scanning backwards
+      let rankIndex = -1;
+      for (let j = parts.length - 1; j >= 0; j--) {
+        if (/^(Support|Senior)$/i.test(parts[j])) {
+          rankIndex = j;
+          // If the word before it is "Senior" (i.e. Senior Support), adjust the index
+          if (j > 0 && /^Senior$/i.test(parts[j-1])) {
+            rankIndex = j - 1;
+          }
+          break;
+        }
+      }
+
+      // If we found the rank, the 3 columns BEFORE it are our numbers
+      if (rankIndex >= 3) {
+        const totalIG = parts[rankIndex - 1];
+        const qRej = parts[rankIndex - 2];
+        const qAcc = parts[rankIndex - 3];
         
-        processed.push({
-          'Date': prepDate, 'Staff Name': alias, 'Senior': last?.senior || 'FALSE',
-          'Quizzes Accepted': match[2], 'Quizzes Rejected': match[3], 'Total Reports Completed': Number(totalIG),
-          'Total Forum Reports': '0', 'New IG Reports': Number(totalIG) - (Number(last?.reportsCompleted) || 0),
-          'New Forum Reports': 0, 'Total Discord': last?.totalDiscord || '0', 
-          'New Discord': 0, 'Strike Given': '0', 'LOA Days': '0', 'loaStart': '', 'loaEnd': ''
-        });
+        // Everything before the Quizzes Accepted is the Alias
+        const rawAlias = parts.slice(0, rankIndex - 3).join(" ");
+        // Strip GTA colors (~g~, ~q~, etc)
+        const alias = rawAlias.replace(/~[a-z]~/gi, "").trim();
+
+        if (alias && !isNaN(Number(totalIG))) {
+          const last = initialData.filter(r => r.name.toLowerCase() === alias.toLowerCase()).sort((a,b) => new Date(b.date) - new Date(a.date))[0];
+          
+          processed.push({
+            'Date': prepDate, 
+            'Staff Name': alias, 
+            'Senior': last?.senior || 'FALSE',
+            'Quizzes Accepted': qAcc, 
+            'Quizzes Rejected': qRej, 
+            'Total Reports Completed': Number(totalIG),
+            'Total Forum Reports': '0', 
+            'New IG Reports': Number(totalIG) - (Number(last?.reportsCompleted) || 0),
+            'New Forum Reports': 0, 
+            'Total Discord': last?.totalDiscord || '0', 
+            'New Discord': 0, 
+            'Strike Given': '0', 
+            'LOA Days': '0', 
+            'loaStart': '', 
+            'loaEnd': ''
+          });
+        }
       }
     }
     setStagedRows(processed); 
@@ -160,52 +188,16 @@ export default function StaffTable({ initialData }) {
     return { progress, quota, met: progress >= quota };
   }, [lookupName, lookupTotal, initialData]);
 
-  // --- 6. ACTION HANDLERS WITH VISUAL FEEDBACK ---
-  const handleRankChange = async (name, isSenior) => {
-    const action = isSenior === 'TRUE' ? 'Demote' : 'Promote';
-    if (!window.confirm(`Confirm you want to ${action} ${name}?`)) return;
-    
-    setProcessingName(name);
-    const res = await manageStaffRecord({ name, action });
-    setProcessingName(null);
-    
-    if (res?.success) {
-      setActionStatus(`✅ ${name} has been ${action.toLowerCase()}d!`);
-      setTimeout(() => setActionStatus(null), 4000);
-    }
-  };
-
-  const handleRemoveStaff = async (name) => {
-    if (!window.confirm(`Confirm you want to REMOVE ${name}? This alters the roster sheet.`)) return;
-    
-    setProcessingName(name);
-    const res = await manageStaffRecord({ name, action: 'Remove' });
-    setProcessingName(null);
-    
-    if (res?.success) {
-      setActionStatus(`❌ ${name} has been removed from the active roster.`);
-      setTimeout(() => setActionStatus(null), 4000);
-    }
-  };
-
   return (
-    <div className="space-y-6 relative">
-      
-      {/* TOAST NOTIFICATION */}
-      {actionStatus && (
-        <div className="fixed bottom-6 right-6 bg-slate-800 border-2 border-emerald-500 text-white px-6 py-4 rounded-2xl shadow-2xl z-50 font-bold tracking-tight animate-in slide-in-from-bottom-5">
-          {actionStatus}
-        </div>
-      )}
-
+    <div className="space-y-6">
       {/* TOOLBAR */}
       <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-wrap gap-4 justify-between items-center shadow-xl">
         <div className="flex gap-4 items-center">
-          <input type="text" placeholder="Search..." className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm outline-none" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input type="text" placeholder="Search Staff..." className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-indigo-500" value={search} onChange={(e) => setSearch(e.target.value)} />
           <div className="flex gap-2 items-center bg-slate-800 p-1 rounded-lg border border-slate-700">
-             <select className="bg-transparent text-[10px] font-bold" value={startMonth} onChange={(e) => setStartMonth(e.target.value)}>{availableMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
+             <select className="bg-transparent text-[10px] font-bold outline-none" value={startMonth} onChange={(e) => setStartMonth(e.target.value)}>{availableMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
              <span className="text-[10px] text-slate-500 font-black">TO</span>
-             <select className="bg-transparent text-[10px] font-bold" value={endMonth} onChange={(e) => setEndMonth(e.target.value)}>{availableMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
+             <select className="bg-transparent text-[10px] font-bold outline-none" value={endMonth} onChange={(e) => setEndMonth(e.target.value)}>{availableMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
           </div>
           <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
              {['All', 'Support', 'Senior'].map(r => <button key={r} onClick={() => setRoleFilter(r)} className={`px-3 py-1 text-[10px] font-bold rounded ${roleFilter === r ? 'bg-indigo-500 text-white' : 'text-slate-500 hover:text-white transition-colors'}`}>{r}</button>)}
@@ -230,12 +222,7 @@ export default function StaffTable({ initialData }) {
         <div className="bg-slate-900 border-2 border-emerald-500/30 rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in duration-300">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-xl font-black text-emerald-400 italic">STAGING AREA: Verify Data & Input LOA</h3>
-            <button onClick={async () => { 
-                await commitMonthlyBatch(stagedRows); 
-                setStagedRows([]); 
-                setActionStatus(`✅ Monthly Batch Successfully Committed!`);
-                setTimeout(() => setActionStatus(null), 4000);
-            }} className="bg-emerald-600 px-8 py-3 rounded-xl font-black text-xs uppercase shadow-xl hover:bg-emerald-500 transition-colors">Finalize Commit</button>
+            <button onClick={async () => { await commitMonthlyBatch(stagedRows); setStagedRows([]); }} className="bg-emerald-600 px-8 py-3 rounded-xl font-black text-xs uppercase shadow-xl hover:bg-emerald-500 transition-colors">Finalize Commit</button>
           </div>
           <table className="w-full text-[10px] text-left">
             <thead className="bg-slate-800 text-slate-500 uppercase tracking-widest border-b border-slate-700">
@@ -293,10 +280,9 @@ export default function StaffTable({ initialData }) {
               const isFailing = Number(s.newIG) < quota || (s.senior === 'TRUE' && Number(s.newForum) < (5 * multiplier));
               const hasStrike = Number(s.strike) > 0;
               const isWaived = waivedStrikes.includes(`${s.name}-${endMonth}`);
-              const isProcessing = processingName === s.name;
 
               return (
-                <tr key={i} className={`hover:bg-slate-800/30 transition-colors ${isFailing && !hasStrike && !isWaived ? 'bg-rose-500/10' : ''} ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}>
+                <tr key={i} className={`hover:bg-slate-800/30 transition-colors ${isFailing && !hasStrike && !isWaived ? 'bg-rose-500/10' : ''}`}>
                   <td className="p-4 font-bold text-white">
                     {s.name}
                     <div className="text-[10px] text-slate-500 uppercase">{s.senior === 'TRUE' ? 'Senior' : 'Support'}</div>
@@ -323,21 +309,13 @@ export default function StaffTable({ initialData }) {
                     {isFailing && !hasStrike && !isWaived ? (
                       <div className="flex items-center justify-center gap-1">
                          <span className="text-[9px] font-black text-rose-500 uppercase animate-pulse mr-2 tracking-widest">DUE</span>
-                         <button onClick={async () => { 
-                            if(confirm(`Confirm Strike for ${s.name}?`)) {
-                              setProcessingName(s.name);
-                              await issueStrike({name: s.name, date: endMonth + "-01", amount: '1'}); 
-                              setProcessingName(null);
-                              setActionStatus(`⚠️ Strike issued to ${s.name}`);
-                              setTimeout(() => setActionStatus(null), 4000);
-                            }
-                         }} className="bg-rose-600 hover:bg-rose-500 text-[9px] px-2 py-1.5 rounded text-white font-bold uppercase transition-colors">{isProcessing ? '...' : 'Confirm'}</button>
+                         <button onClick={async () => { if(confirm(`Confirm Strike for ${s.name}?`)) await issueStrike({name: s.name, date: endMonth + "-01", amount: '1'}); }} className="bg-rose-600 hover:bg-rose-500 text-[9px] px-2 py-1.5 rounded text-white font-bold uppercase transition-colors">Confirm</button>
                          <button onClick={() => setWaivedStrikes([...waivedStrikes, `${s.name}-${endMonth}`])} className="bg-slate-700 hover:bg-slate-600 text-[9px] px-2 py-1.5 rounded text-white font-bold uppercase transition-colors">Deny</button>
                       </div>
                     ) : (
                       <div className="flex justify-center gap-2">
-                        <button onClick={() => handleRankChange(s.name, s.senior)} className="text-[10px] font-bold text-indigo-400 hover:text-white uppercase underline transition-colors">{isProcessing ? 'Wait' : 'Rank'}</button>
-                        <button onClick={() => handleRemoveStaff(s.name)} className="text-[10px] font-bold text-rose-400 hover:text-white uppercase underline transition-colors">{isProcessing ? 'Wait' : 'Remove'}</button>
+                        <button onClick={() => manageStaffRecord({ name: s.name, action: s.senior === 'TRUE' ? 'Demote' : 'Promote' })} className="text-[10px] font-bold text-indigo-400 hover:text-white uppercase underline transition-colors">Rank</button>
+                        <button onClick={() => manageStaffRecord({ name: s.name, action: 'Remove' })} className="text-[10px] font-bold text-rose-400 hover:text-white uppercase underline transition-colors">Remove</button>
                       </div>
                     )}
                   </td>
@@ -384,16 +362,7 @@ export default function StaffTable({ initialData }) {
             </select>
             <div className="flex gap-4">
               <button onClick={() => setIsAddModal(false)} className="flex-1 text-slate-400 font-bold uppercase text-xs">Cancel</button>
-              <button disabled={processingName === 'adding'} onClick={async () => { 
-                setProcessingName('adding');
-                const res = await manageStaffRecord({...formState, action: 'Add'}); 
-                setProcessingName(null);
-                setIsAddModal(false); 
-                if(res?.success) {
-                  setActionStatus(`✅ ${formState.name} has been hired!`);
-                  setTimeout(() => setActionStatus(null), 4000);
-                }
-              }} className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 transition-colors rounded-xl font-bold text-white uppercase text-xs shadow-lg">{processingName === 'adding' ? 'Hiring...' : 'Confirm Hire'}</button>
+              <button onClick={async () => { await manageStaffRecord({...formState, action: 'Add'}); setIsAddModal(false); }} className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 transition-colors rounded-xl font-bold text-white uppercase text-xs shadow-lg">Confirm Hire</button>
             </div>
           </div>
         </div>
