@@ -97,68 +97,49 @@ export default function StaffTable({ initialData }) {
     return { ig: sorted('newIG'), forum: sorted('newForum'), discord: sorted('newDiscord') };
   }, [displayData]);
 
-  // --- 4. PREP LOGIC (BACKWARD ARRAY SHREDDER) ---
+  // --- 4. PREP LOGIC (THE GLOBAL SCANNER) ---
   function handleProcessPrep() {
-    const lines = prepText.split('\n');
+    const clean = (t) => t ? t.replace(/~[a-z]~/gi, "").trim() : "";
+    
+    // This Regex looks for: [Account Name] [Alias (can have spaces)] [Num] [Num] [Num] [Rank]
+    // It completely ignores line breaks, tabs, or how badly the browser pasted it.
+    const regex = /(\S+)\s+(.+?)\s+(\d+)\s+(\d+)\s+(\d+)\s+(Senior Support|Support)/gi;
+    
+    const matches = [...prepText.matchAll(regex)];
     let processed = [];
 
-    for (let line of lines) {
-      line = line.trim();
-      if (!line) continue;
+    for (const match of matches) {
+      const rawAlias = match[2]; // Plucks the Alias safely
+      const qAcc = match[3];
+      const qRej = match[4];
+      const totalIG = match[5];  // Plucks the 3rd number correctly
       
-      // If the line doesn't have the rank in it, it's just an account name or header; skip it.
-      if (!/(Support|Senior)/i.test(line)) continue;
+      const alias = clean(rawAlias);
+      
+      // If the regex accidentally matched the table header, skip it
+      if (alias.toLowerCase().includes("aliasquizzes")) continue;
 
-      // Normalize any tabs into spaces, then split into an array
-      const parts = line.replace(/\t/g, ' ').split(/\s+/).filter(Boolean);
-
-      // Find the Rank column by scanning backwards
-      let rankIndex = -1;
-      for (let j = parts.length - 1; j >= 0; j--) {
-        if (/^(Support|Senior)$/i.test(parts[j])) {
-          rankIndex = j;
-          // If the word before it is "Senior" (i.e. Senior Support), adjust the index
-          if (j > 0 && /^Senior$/i.test(parts[j-1])) {
-            rankIndex = j - 1;
-          }
-          break;
-        }
-      }
-
-      // If we found the rank, the 3 columns BEFORE it are our numbers
-      if (rankIndex >= 3) {
-        const totalIG = parts[rankIndex - 1];
-        const qRej = parts[rankIndex - 2];
-        const qAcc = parts[rankIndex - 3];
-        
-        // Everything before the Quizzes Accepted is the Alias
-        const rawAlias = parts.slice(0, rankIndex - 3).join(" ");
-        // Strip GTA colors (~g~, ~q~, etc)
-        const alias = rawAlias.replace(/~[a-z]~/gi, "").trim();
-
-        if (alias && !isNaN(Number(totalIG))) {
-          const last = initialData.filter(r => r.name.toLowerCase() === alias.toLowerCase()).sort((a,b) => new Date(b.date) - new Date(a.date))[0];
-          
-          processed.push({
-            'Date': prepDate, 
-            'Staff Name': alias, 
-            'Senior': last?.senior || 'FALSE',
-            'Quizzes Accepted': qAcc, 
-            'Quizzes Rejected': qRej, 
-            'Total Reports Completed': Number(totalIG),
-            'Total Forum Reports': '0', 
-            'New IG Reports': Number(totalIG) - (Number(last?.reportsCompleted) || 0),
-            'New Forum Reports': 0, 
-            'Total Discord': last?.totalDiscord || '0', 
-            'New Discord': 0, 
-            'Strike Given': '0', 
-            'LOA Days': '0', 
-            'loaStart': '', 
-            'loaEnd': ''
-          });
-        }
-      }
+      const last = initialData.filter(r => r.name.toLowerCase() === alias.toLowerCase()).sort((a,b) => new Date(b.date) - new Date(a.date))[0];
+      
+      processed.push({
+        'Date': prepDate, 
+        'Staff Name': alias, 
+        'Senior': last?.senior || 'FALSE',
+        'Quizzes Accepted': qAcc, 
+        'Quizzes Rejected': qRej, 
+        'Total Reports Completed': Number(totalIG),
+        'Total Forum Reports': '0', 
+        'New IG Reports': Number(totalIG) - (Number(last?.reportsCompleted) || 0),
+        'New Forum Reports': 0, 
+        'Total Discord': last?.totalDiscord || '0', 
+        'New Discord': 0, 
+        'Strike Given': '0', 
+        'LOA Days': '0', 
+        'loaStart': '', 
+        'loaEnd': ''
+      });
     }
+    
     setStagedRows(processed); 
     setIsPrepModal(false);
   }
